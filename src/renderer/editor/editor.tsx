@@ -22,6 +22,7 @@ import { IPCTools } from "./tools/ipc";
 import { IObjectModified, IEditorPreferences } from "./tools/types";
 import { undoRedo } from "./tools/undo-redo";
 import { AbstractEditorPlugin } from "./tools/plugin";
+import { LayoutUtils } from "./tools/layout-utils";
 
 import { IFile } from "./project/files";
 import { WorkSpace } from "./project/workspace";
@@ -32,6 +33,7 @@ import { WelcomeDialog } from "./project/welcome/welcome";
 
 import { SceneSettings } from "./scene/settings";
 import { GizmoType } from "./scene/gizmo";
+import { SceneUtils } from "./scene/utils";
 
 import { SandboxMain } from "../sandbox/main";
 
@@ -135,6 +137,11 @@ export class Editor {
      * Defines the dictionary of all avaiable loaded plugins in the editor.
      */
     public plugins: IStringDictionary<AbstractEditorPlugin<any>> = { };
+
+    /**
+     * Reference to the scene utils.
+     */
+    public sceneUtils: SceneUtils;
 
     /**
      * Notifies observers once the editor has been initialized.
@@ -279,7 +286,7 @@ export class Editor {
         const layoutStateItem = (layoutVersion === Editor.LayoutVersion) ? localStorage.getItem('babylonjs-editor-layout-state') : null;
         const layoutState = layoutStateItem ? JSON.parse(layoutStateItem) : null;
 
-        if (layoutState) { this._configureLayoutContent(layoutState.content); }
+        if (layoutState) { LayoutUtils.ConfigureLayoutContent(this, layoutState.content); }
 
         this.layout = new GoldenLayout(layoutState ?? {
             settings: {
@@ -685,6 +692,9 @@ export class Editor {
         // Animations
         Animation.AllowMatricesInterpolation = true;
 
+        // Utils
+        this.sceneUtils = new SceneUtils(this.scene);
+
         this._bindEvents();
         this.resize();
 
@@ -781,18 +791,21 @@ export class Editor {
      */
     private _bindEvents(): void {
         // IPC
-        ipcRenderer.on(IPCRequests.SendWindowMessage, async (_, data) => {
-            switch (data.id) {
+        ipcRenderer.on(IPCRequests.SendWindowMessage, async (_, message) => {
+            switch (message.id) {
                 // A window has been closed
                 case "close-window":
-                    const index = this._pluginWindows.indexOf(data.windowId);
+                    const index = this._pluginWindows.indexOf(message.windowId);
                     if (index !== -1) { this._pluginWindows.splice(index, 1); }
                     break;
 
                 // An editor function should be executed
                 case "execute-editor-function":
-                    const result = await this[data.functionName](...data.args);
-                    IPCTools.SendWindowMessage(data.popupId, "execute-editor-function", result)
+                    const caller = Tools.GetEffectiveProperty(this, message.data.functionName);
+                    const fn = Tools.GetProperty<(...args: any[]) => any>(this, message.data.functionName);
+
+                    const result = await fn.call(caller, ...message.data.args);
+                    IPCTools.SendWindowMessage(message.data.popupId, "execute-editor-function", result);
                     break;
             }
         });
@@ -925,35 +938,11 @@ export class Editor {
             if (this._resetting) { return; }
 
             const config = this.layout.toConfig();
-            this._clearLayoutContent(config.content);
+            LayoutUtils.ClearLayoutContent(this, config.content);
 
             localStorage.setItem("babylonjs-editor-layout-state", JSON.stringify(config));
             localStorage.setItem("babylonjs-editor-layout-version", Editor.LayoutVersion);
             localStorage.setItem("babylonjs-editor-loaded-plugins", JSON.stringify(Editor._loadedPlugins));
-        });
-    }
-
-    /**
-     * Clears the contents of the serialized layout.
-     */
-    private _clearLayoutContent(content: Nullable<any[]>): void {
-        if (!content) { return; }
-        content.forEach((c) => {
-            if (c.props) { c.props = { }; }
-            if (c.componentState) { delete c.componentState; }
-
-            this._clearLayoutContent(c.content);
-        });
-    }
-
-    /**
-     * Configures the contents of the serialized layout.
-     */
-    private _configureLayoutContent(content: Nullable<any[]>): void {
-        if (!content) { return; }
-        content.forEach((c) => {
-            if (c.props) { c.props = { editor: this, id: c.id }; }
-            this._configureLayoutContent(c.content);
         });
     }
 

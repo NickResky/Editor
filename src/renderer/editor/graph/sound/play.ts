@@ -2,18 +2,15 @@ import { LiteGraph } from "litegraph.js";
 
 import { GraphNode, ICodeGenerationOutput, CodeGenerationOutputType } from "../node";
 
-export class Log extends GraphNode<{ message: string; }> {
+export class PlaySound extends GraphNode<{ soundName: string }> {
     /**
      * Constructor.
      */
     public constructor() {
-        super("Log");
+        super("Play Sound");
 
         this.addInput("", LiteGraph.EVENT as any);
-        this.addInput("Message", "");
-
-        this.addProperty("message", "message", "string");
-        this.addWidget("text", "message", this.properties.message, (v) => this.properties.message = v);
+        this.addInput("sound *", "sound");
 
         this.addOutput("", LiteGraph.EVENT as any);
     }
@@ -22,17 +19,20 @@ export class Log extends GraphNode<{ message: string; }> {
      * Called on the node is being executed.
      */
     public execute(): void {
-        console.log(this.getInputData(1) ?? this.properties.message);
-        this.triggerSlot(0, null);
+        const sound = this.getScene().getSoundByName(this.getInputData(0));
+        if (sound) {
+            sound.play();
+            this.triggerSlot(0, null);
+        }
     }
 
     /**
      * Generates the code of the graph.
      */
-    public generateCode(value?: ICodeGenerationOutput): ICodeGenerationOutput {
+    public generateCode(value: ICodeGenerationOutput): ICodeGenerationOutput {
         return {
             type: CodeGenerationOutputType.Function,
-            code: `console.log(${value?.code ?? `"${this.properties.message}"`})`,
+            code: `${value.code}.play()`,
         };
     }
 }

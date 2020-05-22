@@ -16,6 +16,7 @@ import { Icon } from "../gui/icon";
 import { Dialog } from "../gui/dialog";
 
 import { undoRedo } from "../tools/undo-redo";
+import { IPCTools } from "../tools/ipc";
 
 import { Assets } from "../components/assets";
 import { AbstractAssets, IAssetComponentItem } from "./abstract-assets";
@@ -97,18 +98,24 @@ export class GraphAssets extends AbstractAssets {
         }
 
         let callback: (...args: any[]) => void;
-        ipcRenderer.on(IPCResponses.SendWindowMessage, callback = async (_, data) => {
-            if (data.id !== "graph-json") { return; }
-            if (data.path !== item.key) { return; }
+        ipcRenderer.on(IPCResponses.SendWindowMessage, callback = async (_, message) => {
+            if (message.id !== "graph-json") { return; }
+            if (message.data.path !== item.key) { return; }
 
-            if (data.closed) {
+            if (message.data.closed) {
                 ipcRenderer.removeListener(IPCResponses.SendWindowMessage, callback);
             }
 
-            await writeJSON(item.key, data.json, {
-                encoding: "utf-8",
-                spaces: "\t",
-            });
+            try {
+                await writeJSON(item.key, message.data.json, {
+                    encoding: "utf-8",
+                    spaces: "\t",
+                });
+                
+                IPCTools.SendWindowMessage(popupId, "graph-json");
+            } catch (e) {
+                IPCTools.SendWindowMessage(popupId, "graph-json", { error: true });
+            }
         });
     }
 
